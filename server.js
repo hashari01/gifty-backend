@@ -14,15 +14,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
     throw new Error("Missing STRIPE_SECRET_KEY");
 }
 
-if (!process.env.STRIPE_WEBHOOK_SECRET) {
-    console.warn(
-        "WARNING: STRIPE_WEBHOOK_SECRET is not configured."
-    );
-}
-
-const stripe = new Stripe(
-    process.env.STRIPE_SECRET_KEY
-);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const resend = process.env.RESEND_API_KEY
     ? new Resend(process.env.RESEND_API_KEY)
@@ -45,7 +37,7 @@ app.use(
 
 
 /* =========================================================
-   BASIC HEALTH CHECK
+   HEALTH CHECK
 ========================================================= */
 
 app.get("/", (req, res) => {
@@ -80,9 +72,17 @@ app.post(
 
             if (!signature) {
 
-                return res.status(400).send(
-                    "Missing Stripe signature."
-                );
+                return res
+                    .status(400)
+                    .send("Missing Stripe signature.");
+
+            }
+
+            if (!process.env.STRIPE_WEBHOOK_SECRET) {
+
+                return res
+                    .status(500)
+                    .send("Webhook secret not configured.");
 
             }
 
@@ -96,7 +96,7 @@ app.post(
         } catch (error) {
 
             console.error(
-                "Webhook signature verification failed:",
+                "Webhook verification failed:",
                 error.message
             );
 
@@ -111,32 +111,22 @@ app.post(
 
             switch (event.type) {
 
-                case "checkout.session.completed": {
-
-                    const session =
-                        event.data.object;
+                case "checkout.session.completed":
 
                     await processCompletedOrder(
-                        session
+                        event.data.object
                     );
 
                     break;
 
-                }
 
-
-                case "checkout.session.async_payment_succeeded": {
-
-                    const session =
-                        event.data.object;
+                case "checkout.session.async_payment_succeeded":
 
                     await processCompletedOrder(
-                        session
+                        event.data.object
                     );
 
                     break;
-
-                }
 
 
                 default:
@@ -148,7 +138,7 @@ app.post(
             }
 
 
-            return res.json({
+            res.json({
                 received: true
             });
 
@@ -159,7 +149,7 @@ app.post(
                 error
             );
 
-            return res
+            res
                 .status(500)
                 .json({
                     error:
@@ -368,12 +358,14 @@ const RATE_CACHE_TIME =
 
 async function getExchangeRates() {
 
-    const now = Date.now();
+    const now =
+        Date.now();
 
 
     if (
         exchangeRateCache.timestamp &&
-        now - exchangeRateCache.timestamp <
+        now -
+            exchangeRateCache.timestamp <
             RATE_CACHE_TIME
     ) {
 
@@ -426,17 +418,18 @@ async function getExchangeRates() {
             return;
         }
 
-
         const rate =
-            Number(data.rates[currency]);
-
+            Number(
+                data.rates[currency]
+            );
 
         if (
             Number.isFinite(rate) &&
             rate > 0
         ) {
 
-            rates[currency] = rate;
+            rates[currency] =
+                rate;
 
         }
 
@@ -498,13 +491,12 @@ app.get(
                 error.message
             );
 
-
-            res.status(503).json({
-
-                error:
-                    "Exchange rates are temporarily unavailable."
-
-            });
+            res
+                .status(503)
+                .json({
+                    error:
+                        "Exchange rates are temporarily unavailable."
+                });
 
         }
 
@@ -681,21 +673,20 @@ app.get(
 
         const publicProducts =
             Object.entries(products)
-                .map(([id, product]) => ({
-
-                    id,
-
-                    name:
-                        product.name,
-
-                    amounts:
-                        product.amounts
-
-                }));
+                .map(
+                    ([id, product]) => ({
+                        id,
+                        name:
+                            product.name,
+                        amounts:
+                            product.amounts
+                    })
+                );
 
 
         res.json({
-            products: publicProducts
+            products:
+                publicProducts
         });
 
     }
@@ -725,112 +716,35 @@ function isValidEmail(email) {
 
 
 /* =========================================================
-   VALIDATE CURRENCY
+   GET DISPLAY CURRENCY
 ========================================================= */
 
-function getValidCurrency(
+function getDisplayCurrency(
     displayCurrency
 ) {
 
     if (
-        typeof displayCurrency !== "string"
+        typeof displayCurrency ===
+        "string"
     ) {
 
-        return "USD";
+        const currency =
+            displayCurrency
+                .toUpperCase();
+
+        if (
+            SUPPORTED_CURRENCIES[
+                currency
+            ]
+        ) {
+
+            return currency;
+
+        }
 
     }
-
-
-    const currency =
-        displayCurrency
-            .trim()
-            .toUpperCase();
-
-
-    if (
-        SUPPORTED_CURRENCIES[currency]
-    ) {
-
-        return currency;
-
-    }
-
 
     return "USD";
-
-}
-
-
-/* =========================================================
-   VALIDATE SINGLE CART ITEM
-========================================================= */
-
-function validateCartItem(item) {
-
-    if (
-        !item ||
-        typeof item !== "object"
-    ) {
-
-        throw new Error(
-            "Invalid cart item."
-        );
-
-    }
-
-
-    const productId =
-        String(
-            item.productId ||
-            item.product ||
-            ""
-        );
-
-
-    const product =
-        products[productId];
-
-
-    if (!product) {
-
-        throw new Error(
-            `Invalid product: ${productId}`
-        );
-
-    }
-
-
-    const amount =
-        Number(item.amount);
-
-
-    if (
-        !Number.isFinite(amount) ||
-        !product.amounts.includes(amount)
-    ) {
-
-        throw new Error(
-            `Invalid amount for ${product.name}.`
-        );
-
-    }
-
-
-    return {
-
-        productId,
-
-        product,
-
-        amount,
-
-        fee:
-            product.fee,
-
-        total:
-            amount + product.fee
-
-    };
 
 }
 
@@ -853,29 +767,21 @@ app.post(
             } = req.body;
 
 
-            /* ---------------------------------------------
-               PRODUCT
-            --------------------------------------------- */
-
             const product =
                 products[productId];
 
 
             if (!product) {
 
-                return res.status(400).json({
-
-                    error:
-                        "Invalid product."
-
-                });
+                return res
+                    .status(400)
+                    .json({
+                        error:
+                            "Invalid product."
+                    });
 
             }
 
-
-            /* ---------------------------------------------
-               AMOUNT
-            --------------------------------------------- */
 
             const numericAmount =
                 Number(amount);
@@ -890,45 +796,35 @@ app.post(
                 )
             ) {
 
-                return res.status(400).json({
-
-                    error:
-                        "Invalid gift card amount."
-
-                });
-
-            }
-
-
-            /* ---------------------------------------------
-               EMAIL
-            --------------------------------------------- */
-
-            if (!isValidEmail(email)) {
-
-                return res.status(400).json({
-
-                    error:
-                        "Please provide a valid email address."
-
-                });
+                return res
+                    .status(400)
+                    .json({
+                        error:
+                            "Invalid gift card amount."
+                    });
 
             }
 
 
-            /* ---------------------------------------------
-               CURRENCY
-            --------------------------------------------- */
+            if (
+                !isValidEmail(email)
+            ) {
+
+                return res
+                    .status(400)
+                    .json({
+                        error:
+                            "Please provide a valid email address."
+                    });
+
+            }
+
 
             const currency =
-                getValidCurrency(
+                getDisplayCurrency(
                     displayCurrency
                 );
 
-
-            /* ---------------------------------------------
-               TOTAL
-            --------------------------------------------- */
 
             const total =
                 numericAmount +
@@ -941,14 +837,11 @@ app.post(
                 );
 
 
-            /* ---------------------------------------------
-               STRIPE CHECKOUT
-            --------------------------------------------- */
-
             const session =
                 await stripe.checkout.sessions.create({
 
-                    mode: "payment",
+                    mode:
+                        "payment",
 
                     customer_email:
                         email.trim(),
@@ -1040,17 +933,16 @@ app.post(
         } catch (error) {
 
             console.error(
-                "Single checkout creation error:",
+                "Single checkout error:",
                 error
             );
 
-
-            return res.status(500).json({
-
-                error:
-                    "Unable to create secure checkout."
-
-            });
+            return res
+                .status(500)
+                .json({
+                    error:
+                        "Unable to create secure checkout."
+                });
 
         }
 
@@ -1076,7 +968,7 @@ app.post(
 
 
             /* ---------------------------------------------
-               ITEMS
+               BASIC VALIDATION
             --------------------------------------------- */
 
             if (
@@ -1084,197 +976,171 @@ app.post(
                 items.length === 0
             ) {
 
-                return res.status(400).json({
-
-                    error:
-                        "Your cart is empty."
-
-                });
-
-            }
-
-
-            /*
-             * Prevent extremely large requests.
-             */
-
-            if (items.length > 50) {
-
-                return res.status(400).json({
-
-                    error:
-                        "Cart contains too many items."
-
-                });
+                return res
+                    .status(400)
+                    .json({
+                        error:
+                            "Your cart is empty."
+                    });
 
             }
 
 
-            /* ---------------------------------------------
-               EMAIL
-            --------------------------------------------- */
+            if (
+                items.length > 50
+            ) {
 
-            if (!isValidEmail(email)) {
-
-                return res.status(400).json({
-
-                    error:
-                        "Please provide a valid email address."
-
-                });
+                return res
+                    .status(400)
+                    .json({
+                        error:
+                            "Too many items in cart."
+                    });
 
             }
 
 
-            /* ---------------------------------------------
-               CURRENCY
-            --------------------------------------------- */
+            if (
+                !isValidEmail(email)
+            ) {
+
+                return res
+                    .status(400)
+                    .json({
+                        error:
+                            "Please provide a valid email address."
+                    });
+
+            }
+
 
             const currency =
-                getValidCurrency(
+                getDisplayCurrency(
                     displayCurrency
                 );
 
 
             /* ---------------------------------------------
-               VALIDATE EVERY ITEM
+               BUILD STRIPE LINE ITEMS
             --------------------------------------------- */
 
-            const validatedItems = [];
+            const lineItems = [];
+
+            const orderItems = [];
+
+            let orderTotal = 0;
 
 
             for (
                 const item of items
             ) {
 
-                try {
-
-                    const validated =
-                        validateCartItem(
-                            item
-                        );
+                const product =
+                    products[item.product];
 
 
-                    validatedItems.push(
-                        validated
-                    );
+                if (!product) {
 
-                } catch (error) {
-
-                    return res.status(400).json({
-
-                        error:
-                            error.message
-
-                    });
+                    return res
+                        .status(400)
+                        .json({
+                            error:
+                                `Invalid product: ${item.product}`
+                        });
 
                 }
 
-            }
+
+                const amount =
+                    Number(item.amount);
 
 
-            /* ---------------------------------------------
-               STRIPE LINE ITEMS
-            --------------------------------------------- */
+                if (
+                    !Number.isFinite(
+                        amount
+                    ) ||
+                    !product.amounts.includes(
+                        amount
+                    )
+                ) {
 
-            const lineItems =
-                validatedItems.map(
-                    item => ({
+                    return res
+                        .status(400)
+                        .json({
+                            error:
+                                `Invalid amount for ${product.name}.`
+                        });
 
-                        price_data: {
+                }
 
-                            currency:
-                                "usd",
 
-                            product_data: {
+                const fee =
+                    Number(
+                        product.fee
+                    );
 
-                                name:
-                                    `${item.product.name} Gift Card`,
 
-                                description:
-                                    `GIFty ${item.product.name} digital gift card`
+                const itemTotal =
+                    amount + fee;
 
-                            },
 
-                            unit_amount:
-                                Math.round(
-                                    item.total * 100
-                                )
+                const stripeAmount =
+                    Math.round(
+                        itemTotal * 100
+                    );
+
+
+                lineItems.push({
+
+                    price_data: {
+
+                        currency:
+                            "usd",
+
+                        product_data: {
+
+                            name:
+                                `${product.name} Gift Card`,
+
+                            description:
+                                `GIFty ${product.name} digital gift card + $${fee.toFixed(2)} service fee`
 
                         },
 
-                        quantity: 1
+                        unit_amount:
+                            stripeAmount
 
-                    })
-                );
+                    },
 
+                    quantity: 1
 
-            /* ---------------------------------------------
-               TOTALS
-            --------------------------------------------- */
-
-            const giftCardTotal =
-                validatedItems.reduce(
-                    (
-                        total,
-                        item
-                    ) =>
-                        total + item.amount,
-                    0
-                );
+                });
 
 
-            const feeTotal =
-                validatedItems.reduce(
-                    (
-                        total,
-                        item
-                    ) =>
-                        total + item.fee,
-                    0
-                );
+                orderItems.push({
+
+                    productId:
+                        item.product,
+
+                    productName:
+                        product.name,
+
+                    giftCardValue:
+                        amount.toFixed(2),
+
+                    fee:
+                        fee.toFixed(2),
+
+                    total:
+                        itemTotal.toFixed(2)
+
+                });
 
 
-            const totalUSD =
-                giftCardTotal +
-                feeTotal;
+                orderTotal +=
+                    itemTotal;
 
-
-            /* ---------------------------------------------
-               ORDER DATA FOR WEBHOOK
-            --------------------------------------------- */
-
-            const orderItems =
-                validatedItems.map(
-                    item => ({
-
-                        productId:
-                            item.productId,
-
-                        productName:
-                            item.product.name,
-
-                        giftCardValue:
-                            item.amount,
-
-                        fee:
-                            item.fee,
-
-                        total:
-                            item.total
-
-                    })
-                );
-
-
-            /*
-             * Stripe metadata values must be strings.
-             */
-
-            const orderItemsJSON =
-                JSON.stringify(
-                    orderItems
-                );
+            }
 
 
             /* ---------------------------------------------
@@ -1298,28 +1164,29 @@ app.post(
                         orderType:
                             "cart",
 
-                        itemCount:
-                            String(
-                                validatedItems.length
-                            ),
-
-                        giftCardTotal:
-                            giftCardTotal.toFixed(2),
-
-                        feeTotal:
-                            feeTotal.toFixed(2),
-
-                        totalUSD:
-                            totalUSD.toFixed(2),
-
                         customerEmail:
                             email.trim(),
 
                         displayCurrency:
                             currency,
 
-                        orderItems:
-                            orderItemsJSON
+                        itemCount:
+                            String(
+                                orderItems.length
+                            ),
+
+                        totalUSD:
+                            orderTotal.toFixed(2),
+
+                        /*
+                         * Stripe metadata values must
+                         * be strings.
+                         */
+
+                        items:
+                            JSON.stringify(
+                                orderItems
+                            )
 
                     },
 
@@ -1338,10 +1205,41 @@ app.post(
                 });
 
 
+            console.log("");
+            console.log(
+                "================================"
+            );
+            console.log(
+                "      CART CHECKOUT CREATED"
+            );
+            console.log(
+                "================================"
+            );
+            console.log(
+                "Session:",
+                session.id
+            );
+            console.log(
+                "Customer:",
+                email
+            );
+            console.log(
+                "Items:",
+                orderItems.length
+            );
+            console.log(
+                "Total:",
+                orderTotal.toFixed(2)
+            );
+            console.log(
+                "================================"
+            );
+            console.log("");
+
+
             return res.json({
 
-                success:
-                    true,
+                success: true,
 
                 url:
                     session.url,
@@ -1354,72 +1252,16 @@ app.post(
         } catch (error) {
 
             console.error(
-                "Cart checkout creation error:",
+                "Cart checkout error:",
                 error
             );
 
-
-            return res.status(500).json({
-
-                error:
-                    "Unable to create cart checkout."
-
-            });
-
-        }
-
-    }
-);
-
-
-/* =========================================================
-   CHECKOUT SESSION LOOKUP
-========================================================= */
-
-app.get(
-    "/checkout-session/:sessionId",
-    async (req, res) => {
-
-        try {
-
-            const session =
-                await stripe.checkout.sessions.retrieve(
-                    req.params.sessionId
-                );
-
-
-            res.json({
-
-                id:
-                    session.id,
-
-                status:
-                    session.status,
-
-                paymentStatus:
-                    session.payment_status,
-
-                customerEmail:
-                    session.customer_details?.email ||
-                    session.customer_email ||
-                    null
-
-            });
-
-        } catch (error) {
-
-            console.error(
-                "Checkout session lookup error:",
-                error.message
-            );
-
-
-            res.status(400).json({
-
-                error:
-                    "Unable to find checkout session."
-
-            });
+            return res
+                .status(500)
+                .json({
+                    error:
+                        "Unable to create cart checkout."
+                });
 
         }
 
@@ -1428,7 +1270,7 @@ app.get(
 
 
 /* =========================================================
-   PROCESS SUCCESSFUL ORDER
+   PROCESS COMPLETED ORDER
 ========================================================= */
 
 async function processCompletedOrder(
@@ -1447,388 +1289,12 @@ async function processCompletedOrder(
     const customerEmail =
         metadata.customerEmail ||
         session.customer_details?.email ||
-        session.customer_email ||
         "Unknown";
 
 
     const displayCurrency =
         metadata.displayCurrency ||
         "USD";
-
-
-    /* =====================================================
-       CART ORDER
-    ===================================================== */
-
-    if (
-        orderType === "cart"
-    ) {
-
-        let orderItems = [];
-
-
-        try {
-
-            orderItems =
-                JSON.parse(
-                    metadata.orderItems ||
-                    "[]"
-                );
-
-        } catch (error) {
-
-            console.error(
-                "Could not parse cart order metadata:",
-                error.message
-            );
-
-        }
-
-
-        const giftCardTotal =
-            metadata.giftCardTotal ||
-            "0.00";
-
-
-        const feeTotal =
-            metadata.feeTotal ||
-            "0.00";
-
-
-        const totalUSD =
-            metadata.totalUSD ||
-            (
-                (session.amount_total || 0) /
-                100
-            ).toFixed(2);
-
-
-        console.log("");
-
-        console.log(
-            "================================"
-        );
-
-        console.log(
-            "       NEW GIFty CART ORDER"
-        );
-
-        console.log(
-            "================================"
-        );
-
-        console.log(
-            "Stripe Session:",
-            session.id
-        );
-
-        console.log(
-            "Customer:",
-            customerEmail
-        );
-
-        console.log(
-            "Items:",
-            orderItems.length
-        );
-
-        console.log(
-            "Gift Cards:",
-            giftCardTotal
-        );
-
-        console.log(
-            "Fees:",
-            feeTotal
-        );
-
-        console.log(
-            "Total USD:",
-            totalUSD
-        );
-
-        console.log(
-            "Currency:",
-            displayCurrency
-        );
-
-
-        orderItems.forEach(
-            (item, index) => {
-
-                console.log(
-                    `${index + 1}.`,
-                    item.productName,
-                    "$" +
-                    Number(
-                        item.giftCardValue
-                    ).toFixed(2)
-                );
-
-            }
-        );
-
-
-        console.log(
-            "================================"
-        );
-
-        console.log("");
-
-
-        /* ---------------------------------------------
-           EMAIL OWNER
-        --------------------------------------------- */
-
-        if (
-            resend &&
-            process.env.OWNER_EMAIL
-        ) {
-
-            const itemsHTML =
-                orderItems
-                    .map(
-                        item => `
-
-                            <tr>
-
-                                <td
-                                    style="
-                                        padding:10px;
-                                        border-bottom:1px solid #eee;
-                                    "
-                                >
-                                    ${escapeHtml(
-                                        item.productName
-                                    )}
-                                </td>
-
-                                <td
-                                    style="
-                                        padding:10px;
-                                        border-bottom:1px solid #eee;
-                                    "
-                                >
-                                    $${Number(
-                                        item.giftCardValue
-                                    ).toFixed(2)}
-                                </td>
-
-                                <td
-                                    style="
-                                        padding:10px;
-                                        border-bottom:1px solid #eee;
-                                    "
-                                >
-                                    $${Number(
-                                        item.fee
-                                    ).toFixed(2)}
-                                </td>
-
-                            </tr>
-
-                        `
-                    )
-                    .join("");
-
-
-            await resend.emails.send({
-
-                from:
-                    process.env.EMAIL_FROM ||
-                    "GIFty <onboarding@resend.dev>",
-
-                to: [
-                    process.env.OWNER_EMAIL
-                ],
-
-                subject:
-                    `🎁 New GIFty Cart Order — ${orderItems.length} items`,
-
-                html: `
-
-                    <div
-                        style="
-                            font-family:Arial,sans-serif;
-                            max-width:700px;
-                            margin:auto;
-                        "
-                    >
-
-                        <h1>
-                            🎁 New GIFty Cart Order
-                        </h1>
-
-                        <hr>
-
-                        <p>
-                            <strong>
-                                Customer:
-                            </strong>
-
-                            ${escapeHtml(
-                                customerEmail
-                            )}
-                        </p>
-
-                        <p>
-                            <strong>
-                                Display Currency:
-                            </strong>
-
-                            ${escapeHtml(
-                                displayCurrency
-                            )}
-                        </p>
-
-                        <table
-                            style="
-                                width:100%;
-                                border-collapse:collapse;
-                                margin-top:20px;
-                            "
-                        >
-
-                            <thead>
-
-                                <tr>
-
-                                    <th
-                                        style="
-                                            text-align:left;
-                                            padding:10px;
-                                        "
-                                    >
-                                        Gift Card
-                                    </th>
-
-                                    <th
-                                        style="
-                                            text-align:left;
-                                            padding:10px;
-                                        "
-                                    >
-                                        Value
-                                    </th>
-
-                                    <th
-                                        style="
-                                            text-align:left;
-                                            padding:10px;
-                                        "
-                                    >
-                                        Fee
-                                    </th>
-
-                                </tr>
-
-                            </thead>
-
-                            <tbody>
-
-                                ${itemsHTML}
-
-                            </tbody>
-
-                        </table>
-
-                        <hr>
-
-                        <p>
-                            <strong>
-                                Gift Card Total:
-                            </strong>
-
-                            $${escapeHtml(
-                                giftCardTotal
-                            )}
-                        </p>
-
-                        <p>
-                            <strong>
-                                GIFty Fees:
-                            </strong>
-
-                            $${escapeHtml(
-                                feeTotal
-                            )}
-                        </p>
-
-                        <p
-                            style="
-                                font-size:20px;
-                            "
-                        >
-                            <strong>
-                                Total Paid:
-                            </strong>
-
-                            $${escapeHtml(
-                                totalUSD
-                            )}
-                        </p>
-
-                        <p>
-                            <strong>
-                                Stripe Session:
-                            </strong>
-
-                            ${escapeHtml(
-                                session.id
-                            )}
-                        </p>
-
-                        <hr>
-
-                        <h2>
-                            PAID — PROCESSING
-                        </h2>
-
-                        <p>
-                            The order has been successfully
-                            paid through Stripe.
-                        </p>
-
-                    </div>
-
-                `
-
-            });
-
-        }
-
-
-        /*
-         * FUTURE:
-         *
-         * Purchase each gift card from your supplier
-         * and email the codes to customerEmail.
-         */
-
-
-        return;
-
-    }
-
-
-    /* =====================================================
-       SINGLE ORDER
-    ===================================================== */
-
-    const product =
-        metadata.productName ||
-        metadata.productId ||
-        "Unknown";
-
-
-    const giftCardValue =
-        metadata.giftCardValue ||
-        "0.00";
-
-
-    const fee =
-        metadata.giftyFee ||
-        "0.00";
 
 
     const totalUSD =
@@ -1840,58 +1306,122 @@ async function processCompletedOrder(
 
 
     console.log("");
-
     console.log(
         "================================"
     );
-
     console.log(
         "        NEW GIFty ORDER"
     );
-
     console.log(
         "================================"
     );
-
     console.log(
         "Stripe Session:",
         session.id
     );
-
     console.log(
-        "Product:",
-        product
+        "Order Type:",
+        orderType
     );
-
     console.log(
-        "Gift Card:",
-        giftCardValue
+        "Customer:",
+        customerEmail
     );
-
     console.log(
-        "Fee:",
-        fee
+        "Display Currency:",
+        displayCurrency
     );
-
     console.log(
         "Total USD:",
         totalUSD
     );
 
-    console.log(
-        "Currency:",
-        displayCurrency
-    );
 
-    console.log(
-        "Customer:",
-        customerEmail
-    );
+    /* ---------------------------------------------
+       SINGLE ORDER
+    --------------------------------------------- */
+
+    if (
+        orderType ===
+        "single"
+    ) {
+
+        console.log(
+            "Product:",
+            metadata.productName
+        );
+
+        console.log(
+            "Gift Card:",
+            metadata.giftCardValue
+        );
+
+        console.log(
+            "Fee:",
+            metadata.giftyFee
+        );
+
+    }
+
+
+    /* ---------------------------------------------
+       CART ORDER
+    --------------------------------------------- */
+
+    if (
+        orderType ===
+        "cart"
+    ) {
+
+        let items = [];
+
+        try {
+
+            items =
+                JSON.parse(
+                    metadata.items ||
+                    "[]"
+                );
+
+        } catch {
+
+            items = [];
+
+        }
+
+
+        console.log(
+            "Cart Items:",
+            items.length
+        );
+
+
+        items.forEach(
+            (item, index) => {
+
+                console.log(
+                    `${index + 1}. ${item.productName}`
+                );
+
+                console.log(
+                    "   Gift Card:",
+                    item.giftCardValue
+                );
+
+                console.log(
+                    "   Fee:",
+                    item.fee
+                );
+
+            }
+        );
+
+    }
+
 
     console.log(
         "================================"
     );
-
     console.log("");
 
 
@@ -1904,6 +1434,119 @@ async function processCompletedOrder(
         process.env.OWNER_EMAIL
     ) {
 
+        let orderHtml = "";
+
+
+        if (
+            orderType ===
+            "cart"
+        ) {
+
+            let items = [];
+
+            try {
+
+                items =
+                    JSON.parse(
+                        metadata.items ||
+                        "[]"
+                    );
+
+            } catch {
+
+                items = [];
+
+            }
+
+
+            orderHtml =
+                items.map(
+                    item => `
+
+                        <div
+                            style="
+                                padding:12px;
+                                margin:10px 0;
+                                background:#f5f5f5;
+                                border-radius:8px;
+                            "
+                        >
+
+                            <strong>
+                                ${escapeHtml(
+                                    item.productName
+                                )}
+                            </strong>
+
+                            <br>
+
+                            Gift Card:
+                            $${escapeHtml(
+                                item.giftCardValue
+                            )}
+
+                            <br>
+
+                            Fee:
+                            $${escapeHtml(
+                                item.fee
+                            )}
+
+                            <br>
+
+                            Item Total:
+                            $${escapeHtml(
+                                item.total
+                            )}
+
+                        </div>
+
+                    `
+                ).join("");
+
+        } else {
+
+            orderHtml = `
+
+                <p>
+                    <strong>
+                        Product:
+                    </strong>
+
+                    ${escapeHtml(
+                        metadata.productName ||
+                        metadata.productId ||
+                        "Unknown"
+                    )}
+                </p>
+
+                <p>
+                    <strong>
+                        Gift Card:
+                    </strong>
+
+                    $${escapeHtml(
+                        metadata.giftCardValue ||
+                        "0.00"
+                    )}
+                </p>
+
+                <p>
+                    <strong>
+                        GIFty Fee:
+                    </strong>
+
+                    $${escapeHtml(
+                        metadata.giftyFee ||
+                        "0.00"
+                    )}
+                </p>
+
+            `;
+
+        }
+
+
         await resend.emails.send({
 
             from:
@@ -1915,7 +1558,7 @@ async function processCompletedOrder(
             ],
 
             subject:
-                `🎁 New GIFty Order — ${product}`,
+                `🎁 New GIFty Order — $${totalUSD}`,
 
             html: `
 
@@ -1935,47 +1578,17 @@ async function processCompletedOrder(
 
                     <p>
                         <strong>
-                            Product:
+                            Order Type:
                         </strong>
 
                         ${escapeHtml(
-                            product
+                            orderType
                         )}
                     </p>
 
                     <p>
                         <strong>
-                            Gift Card:
-                        </strong>
-
-                        $${escapeHtml(
-                            giftCardValue
-                        )}
-                    </p>
-
-                    <p>
-                        <strong>
-                            GIFty Fee:
-                        </strong>
-
-                        $${escapeHtml(
-                            fee
-                        )}
-                    </p>
-
-                    <p>
-                        <strong>
-                            Total Paid:
-                        </strong>
-
-                        $${escapeHtml(
-                            totalUSD
-                        )}
-                    </p>
-
-                    <p>
-                        <strong>
-                            Customer Email:
+                            Customer:
                         </strong>
 
                         ${escapeHtml(
@@ -1993,6 +1606,17 @@ async function processCompletedOrder(
                         )}
                     </p>
 
+                    ${orderHtml}
+
+                    <hr>
+
+                    <h2>
+                        Total Paid:
+                        $${escapeHtml(
+                            totalUSD
+                        )}
+                    </h2>
+
                     <p>
                         <strong>
                             Stripe Session:
@@ -2006,12 +1630,12 @@ async function processCompletedOrder(
                     <hr>
 
                     <h2>
-                        PAID — PROCESSING
+                        ✅ PAID
                     </h2>
 
                     <p>
-                        The order has been successfully
-                        paid through Stripe.
+                        Payment was successfully
+                        completed through Stripe.
                     </p>
 
                 </div>
@@ -2026,10 +1650,18 @@ async function processCompletedOrder(
     /*
      * FUTURE:
      *
-     * This is where automatic gift-card fulfillment
-     * should happen.
+     * This is where you will connect
+     * your gift-card supplier API.
+     *
+     * After payment:
+     *
+     * 1. Purchase the gift card.
+     * 2. Receive the gift-card code.
+     * 3. Email the code to customer.
+     *
+     * NEVER put supplier API keys
+     * in index.html.
      */
-
 
 }
 
@@ -2041,27 +1673,22 @@ async function processCompletedOrder(
 function escapeHtml(value) {
 
     return String(value)
-
         .replaceAll(
             "&",
             "&amp;"
         )
-
         .replaceAll(
             "<",
             "&lt;"
         )
-
         .replaceAll(
             ">",
             "&gt;"
         )
-
         .replaceAll(
             '"',
             "&quot;"
         )
-
         .replaceAll(
             "'",
             "&#039;"
@@ -2077,12 +1704,12 @@ function escapeHtml(value) {
 app.use(
     (req, res) => {
 
-        res.status(404).json({
-
-            error:
-                "Endpoint not found."
-
-        });
+        res
+            .status(404)
+            .json({
+                error:
+                    "Endpoint not found."
+            });
 
     }
 );
@@ -2100,20 +1727,19 @@ app.use(
             error
         );
 
-
-        res.status(500).json({
-
-            error:
-                "Internal server error."
-
-        });
+        res
+            .status(500)
+            .json({
+                error:
+                    "Internal server error."
+            });
 
     }
 );
 
 
 /* =========================================================
-   START
+   START SERVER
 ========================================================= */
 
 app.listen(
@@ -2121,18 +1747,18 @@ app.listen(
     () => {
 
         console.log("");
-
         console.log(
-            `🎁 GIFty API running on port ${PORT}`
+            "🎁 GIFty API running"
         );
-
+        console.log(
+            `Port: ${PORT}`
+        );
         console.log(
             `Frontend: ${
                 FRONTEND_URL ||
                 "not configured"
             }`
         );
-
         console.log("");
 
     }
