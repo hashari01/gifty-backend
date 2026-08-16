@@ -141,9 +141,83 @@ app.use(express.json());
 
 
 /* =========================================================
-   PRODUCTS
+   EXCHANGE RATES
 ========================================================= */
 
+const SUPPORTED_CURRENCIES = [
+    "USD",
+    "TND",
+    "EUR",
+    "GBP",
+    "CAD",
+    "AUD",
+    "AED",
+    "SAR",
+    "MAD",
+    "DZD",
+    "EGP",
+    "TRY",
+    "JPY",
+    "CHF"
+];
+
+
+app.get("/exchange-rates", async (req, res) => {
+
+    try {
+
+        const response = await fetch(
+            "https://api.frankfurter.app/latest?from=USD"
+        );
+
+        if (!response.ok) {
+            throw new Error(
+                `Exchange rate API returned ${response.status}`
+            );
+        }
+
+        const data = await response.json();
+
+        const rates = {
+            USD: 1
+        };
+
+        SUPPORTED_CURRENCIES.forEach(currency => {
+
+            if (currency === "USD") return;
+
+            if (data.rates[currency] !== undefined) {
+
+                rates[currency] =
+                    data.rates[currency];
+            }
+
+        });
+
+        res.json({
+            base: "USD",
+            rates: rates,
+            date: data.date
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Exchange rate error:",
+            error.message
+        );
+
+        res.status(500).json({
+            error:
+                "Unable to load exchange rates."
+        });
+    }
+});
+
+
+/* =========================================================
+   PRODUCTS
+========================================================= */
 const products = {
 
     /* GAMING */
