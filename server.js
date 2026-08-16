@@ -1,15 +1,6 @@
 app.post("/create-cart-checkout-session", async (req, res) => {
     try {
-
-        const {
-            items,
-            email,
-            displayCurrency
-        } = req.body;
-
-        /* ================================
-           VALIDATE EMAIL
-        ================================= */
+        const { items, email, displayCurrency } = req.body;
 
         if (!isValidEmail(email)) {
             return res.status(400).json({
@@ -17,14 +8,7 @@ app.post("/create-cart-checkout-session", async (req, res) => {
             });
         }
 
-        /* ================================
-           VALIDATE CART
-        ================================= */
-
-        if (
-            !Array.isArray(items) ||
-            items.length === 0
-        ) {
+        if (!Array.isArray(items) || items.length === 0) {
             return res.status(400).json({
                 error: "Your cart is empty."
             });
@@ -34,54 +18,35 @@ app.post("/create-cart-checkout-session", async (req, res) => {
 
         let cartTotal = 0;
 
-        /* ================================
-           BUILD STRIPE ITEMS
-        ================================= */
-
         for (const item of items) {
 
             /*
-             * Your HTML sends:
+             * Accept both:
+             * item.product
+             * item.productId
              *
-             * productId
-             *
-             * but older code expected:
-             *
-             * product
-             *
-             * We support BOTH.
+             * This prevents the "Invalid product: undefined"
+             * problem if the frontend sends productId.
              */
 
             const productId =
-                item.productId ||
-                item.product;
-
-            if (!productId) {
-                return res.status(400).json({
-                    error: "Cart item is missing a product ID."
-                });
-            }
+                item.product ||
+                item.productId;
 
             const product =
                 products[productId];
 
             if (!product) {
                 return res.status(400).json({
-                    error:
-                        `Invalid product: ${productId}`
+                    error: `Invalid product: ${productId}`
                 });
             }
-
-            /* ================================
-               VALIDATE AMOUNT
-            ================================= */
 
             const amount =
                 Number(item.amount);
 
             if (
                 !Number.isFinite(amount) ||
-                !Array.isArray(product.amounts) ||
                 !product.amounts.includes(amount)
             ) {
                 return res.status(400).json({
@@ -90,55 +55,40 @@ app.post("/create-cart-checkout-session", async (req, res) => {
                 });
             }
 
-            /* ================================
-               FEE
-            ================================= */
-
-            const fee =
-                Number(product.fee) || 0;
+            const quantity =
+                Math.max(
+                    1,
+                    Number(item.quantity || 1)
+                );
 
             const total =
-                amount + fee;
+                amount + product.fee;
 
-            cartTotal += total;
-
-            /* ================================
-               STRIPE LINE ITEM
-            ================================= */
+            cartTotal +=
+                total * quantity;
 
             line_items.push({
-
                 price_data: {
-
                     currency: "usd",
 
                     product_data: {
-
                         name:
                             `${product.name} Gift Card`,
 
                         description:
                             `GIFty ${product.name} digital gift card`
-
                     },
 
                     unit_amount:
                         Math.round(
                             total * 100
                         )
-
                 },
 
                 quantity:
-                    Number(item.quantity) || 1
-
+                    quantity
             });
-
         }
-
-        /* ================================
-           DISPLAY CURRENCY
-        ================================= */
 
         const currency =
             typeof displayCurrency === "string" &&
@@ -148,28 +98,34 @@ app.post("/create-cart-checkout-session", async (req, res) => {
                 ? displayCurrency.toUpperCase()
                 : "USD";
 
-        /* ================================
-           STRIPE CHECKOUT
-        ================================= */
+        const customerEmail =
+            email.trim();
 
         const session =
             await stripe.checkout.sessions.create({
 
-                mode:
-                    "payment",
+                mode: "payment",
 
                 customer_email:
-                    email.trim(),
+                    customerEmail,
+
+                /*
+                 * Stripe will send the customer
+                 * a payment receipt to this email.
+                 */
+                payment_intent_data: {
+                    receipt_email:
+                        customerEmail
+                },
 
                 line_items,
 
                 metadata: {
-
                     orderType:
                         "cart",
 
                     customerEmail:
-                        email.trim(),
+                        customerEmail,
 
                     displayCurrency:
                         currency,
@@ -177,29 +133,25 @@ app.post("/create-cart-checkout-session", async (req, res) => {
                     cartItems:
                         JSON.stringify(
                             items.map(item => ({
-
                                 product:
-                                    item.productId ||
-                                    item.product,
+                                    item.product ||
+                                    item.productId,
 
                                 amount:
-                                    Number(item.amount),
+                                    Number(
+                                        item.amount
+                                    ),
 
                                 quantity:
                                     Number(
-                                        item.quantity
-                                    ) || 1,
-
-                                email:
-                                    item.email ||
-                                    email.trim()
-
+                                        item.quantity ||
+                                        1
+                                    )
                             }))
                         ),
 
                     totalUSD:
                         cartTotal.toFixed(2)
-
                 },
 
                 billing_address_collection:
@@ -213,24 +165,12 @@ app.post("/create-cart-checkout-session", async (req, res) => {
 
                 cancel_url:
                     `${FRONTEND_URL}/?payment=cancelled`
-
             });
 
-        /* ================================
-           RETURN STRIPE URL
-        ================================= */
-
         return res.json({
-
-            success:
-                true,
-
-            url:
-                session.url,
-
-            sessionId:
-                session.id
-
+            success: true,
+            url: session.url,
+            sessionId: session.id
         });
 
     } catch (error) {
@@ -241,13 +181,8 @@ app.post("/create-cart-checkout-session", async (req, res) => {
         );
 
         return res.status(500).json({
-
             error:
-                error.message ||
                 "Unable to create cart checkout."
-
         });
-
     }
-
 });
