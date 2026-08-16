@@ -21,6 +21,11 @@ app.get("/", (req, res) => {
     });
 });
 
+
+/* =========================================================
+   STRIPE WEBHOOK
+========================================================= */
+
 app.post("/webhook", express.raw({
     type: "application/json"
 }), async (req, res) => {
@@ -40,9 +45,15 @@ app.post("/webhook", express.raw({
             const session = event.data.object;
             const metadata = session.metadata || {};
 
-            const product = metadata.productId || "Unknown";
-            const giftCardValue = metadata.giftCardValue || "Unknown";
-            const fee = metadata.giftyFee || "Unknown";
+            const product =
+                metadata.productId || "Unknown";
+
+            const giftCardValue =
+                metadata.giftCardValue || "Unknown";
+
+            const fee =
+                metadata.giftyFee || "Unknown";
+
             const email =
                 metadata.customerEmail ||
                 session.customer_details?.email ||
@@ -62,11 +73,17 @@ app.post("/webhook", express.raw({
             await resend.emails.send({
                 from: "GIFty <onboarding@resend.dev>",
                 to: [process.env.OWNER_EMAIL],
-                subject: `🎁 New GIFty Order — ${product}`,
+
+                subject:
+                    `🎁 New GIFty Order — ${product}`,
+
                 html: `
                     <h1>🎁 New GIFty Order</h1>
 
-                    <p><strong>Product:</strong> ${product}</p>
+                    <p>
+                        <strong>Product:</strong>
+                        ${product}
+                    </p>
 
                     <p>
                         <strong>Gift Card:</strong>
@@ -106,15 +123,201 @@ app.post("/webhook", express.raw({
 
     } catch (error) {
 
-        console.error("Webhook error:", error.message);
+        console.error(
+            "Webhook error:",
+            error.message
+        );
 
         res.status(400).send("Webhook Error");
     }
 });
 
 
+/* =========================================================
+   JSON
+========================================================= */
+
 app.use(express.json());
 
+
+/* =========================================================
+   PRODUCTS
+========================================================= */
+
+const products = {
+
+    /* GAMING */
+
+    steam: {
+        name: "Steam",
+        amounts: [5, 10, 20, 50, 100],
+        fee: 1.49
+    },
+
+    playstation: {
+        name: "PlayStation Store",
+        amounts: [10, 20, 25, 50, 100],
+        fee: 1.49
+    },
+
+    xbox: {
+        name: "Xbox",
+        amounts: [10, 15, 25, 50, 100],
+        fee: 1.49
+    },
+
+    roblox: {
+        name: "Roblox",
+        amounts: [10, 20, 25, 50, 100],
+        fee: 1.49
+    },
+
+    nintendo: {
+        name: "Nintendo eShop",
+        amounts: [10, 20, 35, 50, 100],
+        fee: 1.49
+    },
+
+    razergold: {
+        name: "Razer Gold",
+        amounts: [10, 20, 50, 100],
+        fee: 1.49
+    },
+
+    riotgames: {
+        name: "Riot Games",
+        amounts: [10, 20, 25, 50, 100],
+        fee: 1.49
+    },
+
+    epicgames: {
+        name: "Epic Games",
+        amounts: [10, 20, 25, 50, 100],
+        fee: 1.49
+    },
+
+    minecraft: {
+        name: "Minecraft",
+        amounts: [10, 20, 30, 50],
+        fee: 1.49
+    },
+
+    pubgmobile: {
+        name: "PUBG Mobile",
+        amounts: [10, 20, 30, 50, 100],
+        fee: 1.49
+    },
+
+
+    /* MUSIC */
+
+    spotify: {
+        name: "Spotify",
+        amounts: [10, 20, 30, 50],
+        fee: 1.49
+    },
+
+
+    /* APPS */
+
+    apple: {
+        name: "Apple Gift Card",
+        amounts: [10, 25, 50, 100],
+        fee: 1.99
+    },
+
+    googleplay: {
+        name: "Google Play",
+        amounts: [10, 20, 25, 50, 100],
+        fee: 1.49
+    },
+
+    discord: {
+        name: "Discord",
+        amounts: [10, 20, 50],
+        fee: 1.49
+    },
+
+    microsoft: {
+        name: "Microsoft",
+        amounts: [10, 25, 50, 100],
+        fee: 1.49
+    },
+
+
+    /* STREAMING */
+
+    netflix: {
+        name: "Netflix",
+        amounts: [15, 25, 50, 100],
+        fee: 1.99
+    },
+
+    crunchyroll: {
+        name: "Crunchyroll",
+        amounts: [10, 25, 50],
+        fee: 1.49
+    },
+
+    youtube: {
+        name: "YouTube",
+        amounts: [10, 20, 25, 50, 100],
+        fee: 1.49
+    },
+
+
+    /* SHOPPING */
+
+    amazon: {
+        name: "Amazon",
+        amounts: [10, 25, 50, 100],
+        fee: 1.99
+    },
+
+    ikea: {
+        name: "IKEA",
+        amounts: [10, 25, 50, 100],
+        fee: 1.99
+    },
+
+    zalando: {
+        name: "Zalando",
+        amounts: [10, 25, 50, 100],
+        fee: 1.99
+    },
+
+
+    /* TRAVEL */
+
+    uber: {
+        name: "Uber",
+        amounts: [10, 20, 50, 100],
+        fee: 1.99
+    },
+
+    ubereats: {
+        name: "Uber Eats",
+        amounts: [10, 20, 50, 100],
+        fee: 1.99
+    },
+
+    airbnb: {
+        name: "Airbnb",
+        amounts: [25, 50, 100, 200],
+        fee: 2.49
+    },
+
+    booking: {
+        name: "Booking.com",
+        amounts: [25, 50, 100, 200],
+        fee: 2.49
+    }
+};
+
+
+/* =========================================================
+   CREATE STRIPE CHECKOUT
+========================================================= */
 
 app.post("/create-checkout-session", async (req, res) => {
 
@@ -126,84 +329,56 @@ app.post("/create-checkout-session", async (req, res) => {
             email
         } = req.body;
 
-        const products = {
 
-            steam: {
-                name: "Steam",
-                amounts: [5, 10, 20, 50, 100],
-                fee: 1.49
-            },
+        /* Find product */
 
-            spotify: {
-                name: "Spotify",
-                amounts: [10, 20, 30, 50],
-                fee: 1.49
-            },
-
-            roblox: {
-                name: "Roblox",
-                amounts: [10, 20, 25, 50, 100],
-                fee: 1.49
-            },
-
-            playstation: {
-                name: "PlayStation Store",
-                amounts: [10, 20, 25, 50, 100],
-                fee: 1.49
-            },
-
-            xbox: {
-                name: "Xbox",
-                amounts: [10, 15, 25, 50, 100],
-                fee: 1.49
-            },
-
-            apple: {
-                name: "Apple Gift Card",
-                amounts: [10, 25, 50, 100],
-                fee: 1.99
-            },
-
-            googleplay: {
-                name: "Google Play",
-                amounts: [10, 20, 25, 50, 100],
-                fee: 1.49
-            },
-
-            netflix: {
-                name: "Netflix",
-                amounts: [15, 25, 50, 100],
-                fee: 1.99
-            }
-        };
-
-        const product = products[productId];
+        const product =
+            products[productId];
 
         if (!product) {
+
             return res.status(400).json({
                 error: "Invalid product."
             });
         }
 
-        const numericAmount = Number(amount);
 
-        if (!product.amounts.includes(numericAmount)) {
+        /* Validate amount */
+
+        const numericAmount =
+            Number(amount);
+
+        if (
+            !Number.isFinite(numericAmount) ||
+            !product.amounts.includes(numericAmount)
+        ) {
+
             return res.status(400).json({
                 error: "Invalid gift card amount."
             });
         }
 
+
+        /* Validate email */
+
         if (
             typeof email !== "string" ||
             !email.includes("@")
         ) {
+
             return res.status(400).json({
                 error: "Invalid email."
             });
         }
 
+
+        /* Calculate total */
+
         const total =
             numericAmount + product.fee;
+
+
+        /* Create Stripe session */
 
         const session =
             await stripe.checkout.sessions.create({
@@ -215,9 +390,11 @@ app.post("/create-checkout-session", async (req, res) => {
                 line_items: [
                     {
                         price_data: {
+
                             currency: "usd",
 
                             product_data: {
+
                                 name:
                                     `${product.name} Gift Card`,
 
@@ -226,7 +403,9 @@ app.post("/create-checkout-session", async (req, res) => {
                             },
 
                             unit_amount:
-                                Math.round(total * 100)
+                                Math.round(
+                                    total * 100
+                                )
                         },
 
                         quantity: 1
@@ -234,7 +413,9 @@ app.post("/create-checkout-session", async (req, res) => {
                 ],
 
                 metadata: {
-                    productId: productId,
+
+                    productId:
+                        productId,
 
                     giftCardValue:
                         numericAmount.toFixed(2),
@@ -253,26 +434,38 @@ app.post("/create-checkout-session", async (req, res) => {
                     "https://hashari01.github.io/gifty/?payment=cancelled"
             });
 
+
         res.json({
             url: session.url
         });
 
+
     } catch (error) {
 
-        console.error("Checkout error:", error);
+        console.error(
+            "Checkout error:",
+            error
+        );
 
         res.status(500).json({
-            error: "Unable to create checkout."
+            error:
+                "Unable to create checkout."
         });
     }
 });
 
 
+/* =========================================================
+   START SERVER
+========================================================= */
+
 const PORT =
     process.env.PORT || 3000;
 
 app.listen(PORT, () => {
+
     console.log(
         `GIFty API running on port ${PORT}`
     );
+
 });
