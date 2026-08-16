@@ -38,188 +38,192 @@ app.get("/", (req, res) => {
    STRIPE WEBHOOK
 ========================================================= */
 
-app.post("/webhook", express.raw({
-    type: "application/json"
-}), async (req, res) => {
+app.post(
+    "/webhook",
+    express.raw({
+        type: "application/json"
+    }),
+    async (req, res) => {
 
-    try {
+        try {
 
-        const signature =
-            req.headers["stripe-signature"];
+            const signature =
+                req.headers["stripe-signature"];
 
-        const event =
-            stripe.webhooks.constructEvent(
-                req.body,
-                signature,
-                process.env.STRIPE_WEBHOOK_SECRET
-            );
-
-
-        if (
-            event.type ===
-            "checkout.session.completed"
-        ) {
-
-            const session =
-                event.data.object;
-
-            const metadata =
-                session.metadata || {};
+            const event =
+                stripe.webhooks.constructEvent(
+                    req.body,
+                    signature,
+                    process.env.STRIPE_WEBHOOK_SECRET
+                );
 
 
-            const product =
-                metadata.productId ||
-                "Unknown";
+            if (
+                event.type ===
+                "checkout.session.completed"
+            ) {
+
+                const session =
+                    event.data.object;
+
+                const metadata =
+                    session.metadata || {};
 
 
-            const giftCardValue =
-                metadata.giftCardValue ||
-                "Unknown";
+                const product =
+                    metadata.productId ||
+                    "Unknown";
 
 
-            const fee =
-                metadata.giftyFee ||
-                "Unknown";
+                const giftCardValue =
+                    metadata.giftCardValue ||
+                    "Unknown";
 
 
-            const email =
-                metadata.customerEmail ||
-                session.customer_details?.email ||
-                "Unknown";
+                const fee =
+                    metadata.giftyFee ||
+                    "Unknown";
 
 
-            const total = (
-                (session.amount_total || 0) / 100
-            ).toFixed(2);
+                const email =
+                    metadata.customerEmail ||
+                    session.customer_details?.email ||
+                    "Unknown";
 
 
-            console.log(
-                "NEW GIFty ORDER"
-            );
-
-            console.log(
-                "Product:",
-                product
-            );
-
-            console.log(
-                "Gift card:",
-                giftCardValue
-            );
-
-            console.log(
-                "Fee:",
-                fee
-            );
-
-            console.log(
-                "Customer:",
-                email
-            );
-
-            console.log(
-                "Total:",
-                total
-            );
+                const total = (
+                    (session.amount_total || 0) / 100
+                ).toFixed(2);
 
 
-            await resend.emails.send({
+                console.log(
+                    "NEW GIFty ORDER"
+                );
 
-                from:
-                    "GIFty <onboarding@resend.dev>",
+                console.log(
+                    "Product:",
+                    product
+                );
 
-                to: [
-                    process.env.OWNER_EMAIL
-                ],
+                console.log(
+                    "Gift card:",
+                    giftCardValue
+                );
 
-                subject:
-                    `🎁 New GIFty Order — ${product}`,
+                console.log(
+                    "Fee:",
+                    fee
+                );
 
-                html: `
+                console.log(
+                    "Customer:",
+                    email
+                );
 
-                    <h1>
-                        🎁 New GIFty Order
-                    </h1>
+                console.log(
+                    "Total:",
+                    total
+                );
 
-                    <p>
-                        <strong>
-                            Product:
-                        </strong>
 
-                        ${product}
-                    </p>
+                await resend.emails.send({
 
-                    <p>
-                        <strong>
-                            Gift Card:
-                        </strong>
+                    from:
+                        "GIFty <onboarding@resend.dev>",
 
-                        $${giftCardValue}
-                    </p>
+                    to: [
+                        process.env.OWNER_EMAIL
+                    ],
 
-                    <p>
-                        <strong>
-                            GIFty Fee:
-                        </strong>
+                    subject:
+                        `🎁 New GIFty Order — ${product}`,
 
-                        $${fee}
-                    </p>
+                    html: `
 
-                    <p>
-                        <strong>
-                            Total Paid:
-                        </strong>
+                        <h1>
+                            🎁 New GIFty Order
+                        </h1>
 
-                        $${total}
-                    </p>
+                        <p>
+                            <strong>
+                                Product:
+                            </strong>
 
-                    <p>
-                        <strong>
-                            Customer Email:
-                        </strong>
+                            ${product}
+                        </p>
 
-                        ${email}
-                    </p>
+                        <p>
+                            <strong>
+                                Gift Card:
+                            </strong>
 
-                    <hr>
+                            $${giftCardValue}
+                        </p>
 
-                    <p>
-                        <strong>
-                            Status:
-                        </strong>
+                        <p>
+                            <strong>
+                                GIFty Fee:
+                            </strong>
 
-                        PAID — PROCESSING
-                    </p>
+                            $${fee}
+                        </p>
 
-                `
+                        <p>
+                            <strong>
+                                Total Paid:
+                            </strong>
+
+                            $${total}
+                        </p>
+
+                        <p>
+                            <strong>
+                                Customer Email:
+                            </strong>
+
+                            ${email}
+                        </p>
+
+                        <hr>
+
+                        <p>
+                            <strong>
+                                Status:
+                            </strong>
+
+                            PAID — PROCESSING
+                        </p>
+
+                    `
+                });
+
+
+                console.log(
+                    "Order notification sent."
+                );
+
+            }
+
+
+            res.json({
+                received: true
             });
 
 
-            console.log(
-                "Order notification sent."
+        } catch (error) {
+
+            console.error(
+                "Webhook error:",
+                error.message
             );
+
+            res.status(400)
+                .send("Webhook Error");
 
         }
 
-
-        res.json({
-            received: true
-        });
-
-
-    } catch (error) {
-
-        console.error(
-            "Webhook error:",
-            error.message
-        );
-
-        res.status(400)
-            .send("Webhook Error");
-
     }
-
-});
+);
 
 
 /* =========================================================
@@ -230,7 +234,7 @@ app.use(express.json());
 
 
 /* =========================================================
-   EXCHANGE RATES
+   SUPPORTED CURRENCIES
 ========================================================= */
 
 const SUPPORTED_CURRENCIES = [
@@ -253,20 +257,30 @@ const SUPPORTED_CURRENCIES = [
 ];
 
 
+/* =========================================================
+   EXCHANGE RATES
+========================================================= */
+
+/*
+ * This endpoint gets USD exchange rates
+ * for all currencies GIFty supports.
+ *
+ * The customer is NOT charged in these currencies.
+ * Stripe still charges in USD.
+ *
+ * These rates are used by the frontend to
+ * display the approximate local price.
+ */
+
 app.get(
     "/exchange-rates",
     async (req, res) => {
 
         try {
 
-            /*
-             * Frankfurter uses USD as
-             * the base currency.
-             */
-
             const response =
                 await fetch(
-                    "https://api.frankfurter.app/latest?from=USD"
+                    "https://open.er-api.com/v6/latest/USD"
                 );
 
 
@@ -283,15 +297,22 @@ app.get(
                 await response.json();
 
 
+            if (
+                data.result !== "success" ||
+                !data.rates
+            ) {
+
+                throw new Error(
+                    "Invalid exchange rate response"
+                );
+
+            }
+
+
             const rates = {
                 USD: 1
             };
 
-
-            /*
-             * Add every currency that
-             * the provider actually returns.
-             */
 
             SUPPORTED_CURRENCIES.forEach(
                 currency => {
@@ -303,14 +324,17 @@ app.get(
                     }
 
 
+                    const rate =
+                        data.rates[currency];
+
+
                     if (
-                        data.rates &&
-                        typeof data.rates[currency]
-                            === "number"
+                        typeof rate === "number" &&
+                        Number.isFinite(rate)
                     ) {
 
                         rates[currency] =
-                            data.rates[currency];
+                            rate;
 
                     }
 
@@ -325,7 +349,8 @@ app.get(
                 rates: rates,
 
                 date:
-                    data.date || null
+                    data.time_last_update_utc ||
+                    null
 
             });
 
@@ -852,14 +877,12 @@ app.post(
                                 price_data: {
 
                                     /*
-                                     * IMPORTANT:
-                                     *
-                                     * Stripe still charges
-                                     * the customer in USD.
+                                     * Stripe charges in USD.
                                      *
                                      * The currency selector
-                                     * only changes the
-                                     * DISPLAYED estimate.
+                                     * on your website is only
+                                     * for displaying the
+                                     * converted amount.
                                      */
 
                                     currency:
