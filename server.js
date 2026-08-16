@@ -1,6 +1,15 @@
 app.post("/create-cart-checkout-session", async (req, res) => {
     try {
-        const { items, email, displayCurrency } = req.body;
+
+        const {
+            items,
+            email,
+            displayCurrency
+        } = req.body;
+
+        /* ================================
+           VALIDATE EMAIL
+        ================================= */
 
         if (!isValidEmail(email)) {
             return res.status(400).json({
@@ -8,7 +17,14 @@ app.post("/create-cart-checkout-session", async (req, res) => {
             });
         }
 
-        if (!Array.isArray(items) || items.length === 0) {
+        /* ================================
+           VALIDATE CART
+        ================================= */
+
+        if (
+            !Array.isArray(items) ||
+            items.length === 0
+        ) {
             return res.status(400).json({
                 error: "Your cart is empty."
             });
@@ -18,48 +34,111 @@ app.post("/create-cart-checkout-session", async (req, res) => {
 
         let cartTotal = 0;
 
+        /* ================================
+           BUILD STRIPE ITEMS
+        ================================= */
+
         for (const item of items) {
 
-            const product = products[item.product];
+            /*
+             * Your HTML sends:
+             *
+             * productId
+             *
+             * but older code expected:
+             *
+             * product
+             *
+             * We support BOTH.
+             */
+
+            const productId =
+                item.productId ||
+                item.product;
+
+            if (!productId) {
+                return res.status(400).json({
+                    error: "Cart item is missing a product ID."
+                });
+            }
+
+            const product =
+                products[productId];
 
             if (!product) {
                 return res.status(400).json({
-                    error: `Invalid product: ${item.product}`
+                    error:
+                        `Invalid product: ${productId}`
                 });
             }
 
-            const amount = Number(item.amount);
+            /* ================================
+               VALIDATE AMOUNT
+            ================================= */
+
+            const amount =
+                Number(item.amount);
 
             if (
                 !Number.isFinite(amount) ||
+                !Array.isArray(product.amounts) ||
                 !product.amounts.includes(amount)
             ) {
                 return res.status(400).json({
-                    error: `Invalid amount for ${product.name}.`
+                    error:
+                        `Invalid amount for ${product.name}.`
                 });
             }
 
-            const total = amount + product.fee;
+            /* ================================
+               FEE
+            ================================= */
+
+            const fee =
+                Number(product.fee) || 0;
+
+            const total =
+                amount + fee;
 
             cartTotal += total;
 
+            /* ================================
+               STRIPE LINE ITEM
+            ================================= */
+
             line_items.push({
+
                 price_data: {
+
                     currency: "usd",
 
                     product_data: {
-                        name: `${product.name} Gift Card`,
+
+                        name:
+                            `${product.name} Gift Card`,
+
                         description:
                             `GIFty ${product.name} digital gift card`
+
                     },
 
                     unit_amount:
-                        Math.round(total * 100)
+                        Math.round(
+                            total * 100
+                        )
+
                 },
 
-                quantity: 1
+                quantity:
+                    Number(item.quantity) || 1
+
             });
+
         }
+
+        /* ================================
+           DISPLAY CURRENCY
+        ================================= */
 
         const currency =
             typeof displayCurrency === "string" &&
@@ -69,10 +148,15 @@ app.post("/create-cart-checkout-session", async (req, res) => {
                 ? displayCurrency.toUpperCase()
                 : "USD";
 
+        /* ================================
+           STRIPE CHECKOUT
+        ================================= */
+
         const session =
             await stripe.checkout.sessions.create({
 
-                mode: "payment",
+                mode:
+                    "payment",
 
                 customer_email:
                     email.trim(),
@@ -80,7 +164,9 @@ app.post("/create-cart-checkout-session", async (req, res) => {
                 line_items,
 
                 metadata: {
-                    orderType: "cart",
+
+                    orderType:
+                        "cart",
 
                     customerEmail:
                         email.trim(),
@@ -91,13 +177,29 @@ app.post("/create-cart-checkout-session", async (req, res) => {
                     cartItems:
                         JSON.stringify(
                             items.map(item => ({
-                                product: item.product,
-                                amount: Number(item.amount)
+
+                                product:
+                                    item.productId ||
+                                    item.product,
+
+                                amount:
+                                    Number(item.amount),
+
+                                quantity:
+                                    Number(
+                                        item.quantity
+                                    ) || 1,
+
+                                email:
+                                    item.email ||
+                                    email.trim()
+
                             }))
                         ),
 
                     totalUSD:
                         cartTotal.toFixed(2)
+
                 },
 
                 billing_address_collection:
@@ -111,12 +213,24 @@ app.post("/create-cart-checkout-session", async (req, res) => {
 
                 cancel_url:
                     `${FRONTEND_URL}/?payment=cancelled`
+
             });
 
+        /* ================================
+           RETURN STRIPE URL
+        ================================= */
+
         return res.json({
-            success: true,
-            url: session.url,
-            sessionId: session.id
+
+            success:
+                true,
+
+            url:
+                session.url,
+
+            sessionId:
+                session.id
+
         });
 
     } catch (error) {
@@ -127,8 +241,13 @@ app.post("/create-cart-checkout-session", async (req, res) => {
         );
 
         return res.status(500).json({
+
             error:
+                error.message ||
                 "Unable to create cart checkout."
+
         });
+
     }
+
 });
