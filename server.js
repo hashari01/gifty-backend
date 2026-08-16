@@ -15,10 +15,14 @@ if (!process.env.STRIPE_SECRET_KEY) {
 }
 
 if (!process.env.STRIPE_WEBHOOK_SECRET) {
-    console.warn("WARNING: STRIPE_WEBHOOK_SECRET is not configured.");
+    console.warn(
+        "WARNING: STRIPE_WEBHOOK_SECRET is not configured."
+    );
 }
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const stripe = new Stripe(
+    process.env.STRIPE_SECRET_KEY
+);
 
 const resend = process.env.RESEND_API_KEY
     ? new Resend(process.env.RESEND_API_KEY)
@@ -45,18 +49,19 @@ app.use(
 ========================================================= */
 
 app.get("/", (req, res) => {
+
     res.json({
         service: "GIFty API",
         status: "online",
-        version: "2.0.0"
+        version: "3.0.0"
     });
+
 });
 
 
 /* =========================================================
    STRIPE WEBHOOK
-   IMPORTANT:
-   This MUST come before express.json()
+   MUST COME BEFORE express.json()
 ========================================================= */
 
 app.post(
@@ -74,9 +79,11 @@ app.post(
                 req.headers["stripe-signature"];
 
             if (!signature) {
+
                 return res.status(400).send(
                     "Missing Stripe signature."
                 );
+
             }
 
             event =
@@ -96,6 +103,7 @@ app.post(
             return res
                 .status(400)
                 .send("Webhook Error");
+
         }
 
 
@@ -113,6 +121,7 @@ app.post(
                     );
 
                     break;
+
                 }
 
 
@@ -126,6 +135,7 @@ app.post(
                     );
 
                     break;
+
                 }
 
 
@@ -155,6 +165,7 @@ app.post(
                     error:
                         "Webhook processing failed."
                 });
+
         }
 
     }
@@ -336,11 +347,15 @@ const SUPPORTED_CURRENCIES = {
 ========================================================= */
 
 let exchangeRateCache = {
+
     rates: {
         USD: 1
     },
+
     date: null,
+
     timestamp: 0
+
 };
 
 const RATE_CACHE_TIME =
@@ -354,6 +369,7 @@ const RATE_CACHE_TIME =
 async function getExchangeRates() {
 
     const now = Date.now();
+
 
     if (
         exchangeRateCache.timestamp &&
@@ -410,8 +426,10 @@ async function getExchangeRates() {
             return;
         }
 
+
         const rate =
             Number(data.rates[currency]);
+
 
         if (
             Number.isFinite(rate) &&
@@ -664,9 +682,15 @@ app.get(
         const publicProducts =
             Object.entries(products)
                 .map(([id, product]) => ({
+
                     id,
-                    name: product.name,
-                    amounts: product.amounts
+
+                    name:
+                        product.name,
+
+                    amounts:
+                        product.amounts
+
                 }));
 
 
@@ -701,6 +725,117 @@ function isValidEmail(email) {
 
 
 /* =========================================================
+   VALIDATE CURRENCY
+========================================================= */
+
+function getValidCurrency(
+    displayCurrency
+) {
+
+    if (
+        typeof displayCurrency !== "string"
+    ) {
+
+        return "USD";
+
+    }
+
+
+    const currency =
+        displayCurrency
+            .trim()
+            .toUpperCase();
+
+
+    if (
+        SUPPORTED_CURRENCIES[currency]
+    ) {
+
+        return currency;
+
+    }
+
+
+    return "USD";
+
+}
+
+
+/* =========================================================
+   VALIDATE SINGLE CART ITEM
+========================================================= */
+
+function validateCartItem(item) {
+
+    if (
+        !item ||
+        typeof item !== "object"
+    ) {
+
+        throw new Error(
+            "Invalid cart item."
+        );
+
+    }
+
+
+    const productId =
+        String(
+            item.productId ||
+            item.product ||
+            ""
+        );
+
+
+    const product =
+        products[productId];
+
+
+    if (!product) {
+
+        throw new Error(
+            `Invalid product: ${productId}`
+        );
+
+    }
+
+
+    const amount =
+        Number(item.amount);
+
+
+    if (
+        !Number.isFinite(amount) ||
+        !product.amounts.includes(amount)
+    ) {
+
+        throw new Error(
+            `Invalid amount for ${product.name}.`
+        );
+
+    }
+
+
+    return {
+
+        productId,
+
+        product,
+
+        amount,
+
+        fee:
+            product.fee,
+
+        total:
+            amount + product.fee
+
+    };
+
+}
+
+
+/* =========================================================
    CREATE SINGLE CHECKOUT
 ========================================================= */
 
@@ -729,7 +864,10 @@ app.post(
             if (!product) {
 
                 return res.status(400).json({
-                    error: "Invalid product."
+
+                    error:
+                        "Invalid product."
+
                 });
 
             }
@@ -753,8 +891,10 @@ app.post(
             ) {
 
                 return res.status(400).json({
+
                     error:
                         "Invalid gift card amount."
+
                 });
 
             }
@@ -767,24 +907,23 @@ app.post(
             if (!isValidEmail(email)) {
 
                 return res.status(400).json({
+
                     error:
                         "Please provide a valid email address."
+
                 });
 
             }
 
 
             /* ---------------------------------------------
-               DISPLAY CURRENCY
+               CURRENCY
             --------------------------------------------- */
 
             const currency =
-                typeof displayCurrency === "string" &&
-                SUPPORTED_CURRENCIES[
-                    displayCurrency.toUpperCase()
-                ]
-                    ? displayCurrency.toUpperCase()
-                    : "USD";
+                getValidCurrency(
+                    displayCurrency
+                );
 
 
             /* ---------------------------------------------
@@ -803,7 +942,7 @@ app.post(
 
 
             /* ---------------------------------------------
-               STRIPE SESSION
+               STRIPE CHECKOUT
             --------------------------------------------- */
 
             const session =
@@ -820,7 +959,8 @@ app.post(
 
                             price_data: {
 
-                                currency: "usd",
+                                currency:
+                                    "usd",
 
                                 product_data: {
 
@@ -844,6 +984,9 @@ app.post(
                     ],
 
                     metadata: {
+
+                        orderType:
+                            "single",
 
                         productId,
 
@@ -897,7 +1040,7 @@ app.post(
         } catch (error) {
 
             console.error(
-                "Checkout creation error:",
+                "Single checkout creation error:",
                 error
             );
 
@@ -906,6 +1049,375 @@ app.post(
 
                 error:
                     "Unable to create secure checkout."
+
+            });
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   CREATE CART CHECKOUT
+========================================================= */
+
+app.post(
+    "/create-cart-checkout-session",
+    async (req, res) => {
+
+        try {
+
+            const {
+                items,
+                email,
+                displayCurrency
+            } = req.body;
+
+
+            /* ---------------------------------------------
+               ITEMS
+            --------------------------------------------- */
+
+            if (
+                !Array.isArray(items) ||
+                items.length === 0
+            ) {
+
+                return res.status(400).json({
+
+                    error:
+                        "Your cart is empty."
+
+                });
+
+            }
+
+
+            /*
+             * Prevent extremely large requests.
+             */
+
+            if (items.length > 50) {
+
+                return res.status(400).json({
+
+                    error:
+                        "Cart contains too many items."
+
+                });
+
+            }
+
+
+            /* ---------------------------------------------
+               EMAIL
+            --------------------------------------------- */
+
+            if (!isValidEmail(email)) {
+
+                return res.status(400).json({
+
+                    error:
+                        "Please provide a valid email address."
+
+                });
+
+            }
+
+
+            /* ---------------------------------------------
+               CURRENCY
+            --------------------------------------------- */
+
+            const currency =
+                getValidCurrency(
+                    displayCurrency
+                );
+
+
+            /* ---------------------------------------------
+               VALIDATE EVERY ITEM
+            --------------------------------------------- */
+
+            const validatedItems = [];
+
+
+            for (
+                const item of items
+            ) {
+
+                try {
+
+                    const validated =
+                        validateCartItem(
+                            item
+                        );
+
+
+                    validatedItems.push(
+                        validated
+                    );
+
+                } catch (error) {
+
+                    return res.status(400).json({
+
+                        error:
+                            error.message
+
+                    });
+
+                }
+
+            }
+
+
+            /* ---------------------------------------------
+               STRIPE LINE ITEMS
+            --------------------------------------------- */
+
+            const lineItems =
+                validatedItems.map(
+                    item => ({
+
+                        price_data: {
+
+                            currency:
+                                "usd",
+
+                            product_data: {
+
+                                name:
+                                    `${item.product.name} Gift Card`,
+
+                                description:
+                                    `GIFty ${item.product.name} digital gift card`
+
+                            },
+
+                            unit_amount:
+                                Math.round(
+                                    item.total * 100
+                                )
+
+                        },
+
+                        quantity: 1
+
+                    })
+                );
+
+
+            /* ---------------------------------------------
+               TOTALS
+            --------------------------------------------- */
+
+            const giftCardTotal =
+                validatedItems.reduce(
+                    (
+                        total,
+                        item
+                    ) =>
+                        total + item.amount,
+                    0
+                );
+
+
+            const feeTotal =
+                validatedItems.reduce(
+                    (
+                        total,
+                        item
+                    ) =>
+                        total + item.fee,
+                    0
+                );
+
+
+            const totalUSD =
+                giftCardTotal +
+                feeTotal;
+
+
+            /* ---------------------------------------------
+               ORDER DATA FOR WEBHOOK
+            --------------------------------------------- */
+
+            const orderItems =
+                validatedItems.map(
+                    item => ({
+
+                        productId:
+                            item.productId,
+
+                        productName:
+                            item.product.name,
+
+                        giftCardValue:
+                            item.amount,
+
+                        fee:
+                            item.fee,
+
+                        total:
+                            item.total
+
+                    })
+                );
+
+
+            /*
+             * Stripe metadata values must be strings.
+             */
+
+            const orderItemsJSON =
+                JSON.stringify(
+                    orderItems
+                );
+
+
+            /* ---------------------------------------------
+               STRIPE SESSION
+            --------------------------------------------- */
+
+            const session =
+                await stripe.checkout.sessions.create({
+
+                    mode:
+                        "payment",
+
+                    customer_email:
+                        email.trim(),
+
+                    line_items:
+                        lineItems,
+
+                    metadata: {
+
+                        orderType:
+                            "cart",
+
+                        itemCount:
+                            String(
+                                validatedItems.length
+                            ),
+
+                        giftCardTotal:
+                            giftCardTotal.toFixed(2),
+
+                        feeTotal:
+                            feeTotal.toFixed(2),
+
+                        totalUSD:
+                            totalUSD.toFixed(2),
+
+                        customerEmail:
+                            email.trim(),
+
+                        displayCurrency:
+                            currency,
+
+                        orderItems:
+                            orderItemsJSON
+
+                    },
+
+                    billing_address_collection:
+                        "auto",
+
+                    allow_promotion_codes:
+                        true,
+
+                    success_url:
+                        `${FRONTEND_URL}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+
+                    cancel_url:
+                        `${FRONTEND_URL}/?payment=cancelled`
+
+                });
+
+
+            return res.json({
+
+                success:
+                    true,
+
+                url:
+                    session.url,
+
+                sessionId:
+                    session.id
+
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Cart checkout creation error:",
+                error
+            );
+
+
+            return res.status(500).json({
+
+                error:
+                    "Unable to create cart checkout."
+
+            });
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   CHECKOUT SESSION LOOKUP
+========================================================= */
+
+app.get(
+    "/checkout-session/:sessionId",
+    async (req, res) => {
+
+        try {
+
+            const session =
+                await stripe.checkout.sessions.retrieve(
+                    req.params.sessionId
+                );
+
+
+            res.json({
+
+                id:
+                    session.id,
+
+                status:
+                    session.status,
+
+                paymentStatus:
+                    session.payment_status,
+
+                customerEmail:
+                    session.customer_details?.email ||
+                    session.customer_email ||
+                    null
+
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Checkout session lookup error:",
+                error.message
+            );
+
+
+            res.status(400).json({
+
+                error:
+                    "Unable to find checkout session."
 
             });
 
@@ -926,6 +1438,382 @@ async function processCompletedOrder(
     const metadata =
         session.metadata || {};
 
+
+    const orderType =
+        metadata.orderType ||
+        "single";
+
+
+    const customerEmail =
+        metadata.customerEmail ||
+        session.customer_details?.email ||
+        session.customer_email ||
+        "Unknown";
+
+
+    const displayCurrency =
+        metadata.displayCurrency ||
+        "USD";
+
+
+    /* =====================================================
+       CART ORDER
+    ===================================================== */
+
+    if (
+        orderType === "cart"
+    ) {
+
+        let orderItems = [];
+
+
+        try {
+
+            orderItems =
+                JSON.parse(
+                    metadata.orderItems ||
+                    "[]"
+                );
+
+        } catch (error) {
+
+            console.error(
+                "Could not parse cart order metadata:",
+                error.message
+            );
+
+        }
+
+
+        const giftCardTotal =
+            metadata.giftCardTotal ||
+            "0.00";
+
+
+        const feeTotal =
+            metadata.feeTotal ||
+            "0.00";
+
+
+        const totalUSD =
+            metadata.totalUSD ||
+            (
+                (session.amount_total || 0) /
+                100
+            ).toFixed(2);
+
+
+        console.log("");
+
+        console.log(
+            "================================"
+        );
+
+        console.log(
+            "       NEW GIFty CART ORDER"
+        );
+
+        console.log(
+            "================================"
+        );
+
+        console.log(
+            "Stripe Session:",
+            session.id
+        );
+
+        console.log(
+            "Customer:",
+            customerEmail
+        );
+
+        console.log(
+            "Items:",
+            orderItems.length
+        );
+
+        console.log(
+            "Gift Cards:",
+            giftCardTotal
+        );
+
+        console.log(
+            "Fees:",
+            feeTotal
+        );
+
+        console.log(
+            "Total USD:",
+            totalUSD
+        );
+
+        console.log(
+            "Currency:",
+            displayCurrency
+        );
+
+
+        orderItems.forEach(
+            (item, index) => {
+
+                console.log(
+                    `${index + 1}.`,
+                    item.productName,
+                    "$" +
+                    Number(
+                        item.giftCardValue
+                    ).toFixed(2)
+                );
+
+            }
+        );
+
+
+        console.log(
+            "================================"
+        );
+
+        console.log("");
+
+
+        /* ---------------------------------------------
+           EMAIL OWNER
+        --------------------------------------------- */
+
+        if (
+            resend &&
+            process.env.OWNER_EMAIL
+        ) {
+
+            const itemsHTML =
+                orderItems
+                    .map(
+                        item => `
+
+                            <tr>
+
+                                <td
+                                    style="
+                                        padding:10px;
+                                        border-bottom:1px solid #eee;
+                                    "
+                                >
+                                    ${escapeHtml(
+                                        item.productName
+                                    )}
+                                </td>
+
+                                <td
+                                    style="
+                                        padding:10px;
+                                        border-bottom:1px solid #eee;
+                                    "
+                                >
+                                    $${Number(
+                                        item.giftCardValue
+                                    ).toFixed(2)}
+                                </td>
+
+                                <td
+                                    style="
+                                        padding:10px;
+                                        border-bottom:1px solid #eee;
+                                    "
+                                >
+                                    $${Number(
+                                        item.fee
+                                    ).toFixed(2)}
+                                </td>
+
+                            </tr>
+
+                        `
+                    )
+                    .join("");
+
+
+            await resend.emails.send({
+
+                from:
+                    process.env.EMAIL_FROM ||
+                    "GIFty <onboarding@resend.dev>",
+
+                to: [
+                    process.env.OWNER_EMAIL
+                ],
+
+                subject:
+                    `🎁 New GIFty Cart Order — ${orderItems.length} items`,
+
+                html: `
+
+                    <div
+                        style="
+                            font-family:Arial,sans-serif;
+                            max-width:700px;
+                            margin:auto;
+                        "
+                    >
+
+                        <h1>
+                            🎁 New GIFty Cart Order
+                        </h1>
+
+                        <hr>
+
+                        <p>
+                            <strong>
+                                Customer:
+                            </strong>
+
+                            ${escapeHtml(
+                                customerEmail
+                            )}
+                        </p>
+
+                        <p>
+                            <strong>
+                                Display Currency:
+                            </strong>
+
+                            ${escapeHtml(
+                                displayCurrency
+                            )}
+                        </p>
+
+                        <table
+                            style="
+                                width:100%;
+                                border-collapse:collapse;
+                                margin-top:20px;
+                            "
+                        >
+
+                            <thead>
+
+                                <tr>
+
+                                    <th
+                                        style="
+                                            text-align:left;
+                                            padding:10px;
+                                        "
+                                    >
+                                        Gift Card
+                                    </th>
+
+                                    <th
+                                        style="
+                                            text-align:left;
+                                            padding:10px;
+                                        "
+                                    >
+                                        Value
+                                    </th>
+
+                                    <th
+                                        style="
+                                            text-align:left;
+                                            padding:10px;
+                                        "
+                                    >
+                                        Fee
+                                    </th>
+
+                                </tr>
+
+                            </thead>
+
+                            <tbody>
+
+                                ${itemsHTML}
+
+                            </tbody>
+
+                        </table>
+
+                        <hr>
+
+                        <p>
+                            <strong>
+                                Gift Card Total:
+                            </strong>
+
+                            $${escapeHtml(
+                                giftCardTotal
+                            )}
+                        </p>
+
+                        <p>
+                            <strong>
+                                GIFty Fees:
+                            </strong>
+
+                            $${escapeHtml(
+                                feeTotal
+                            )}
+                        </p>
+
+                        <p
+                            style="
+                                font-size:20px;
+                            "
+                        >
+                            <strong>
+                                Total Paid:
+                            </strong>
+
+                            $${escapeHtml(
+                                totalUSD
+                            )}
+                        </p>
+
+                        <p>
+                            <strong>
+                                Stripe Session:
+                            </strong>
+
+                            ${escapeHtml(
+                                session.id
+                            )}
+                        </p>
+
+                        <hr>
+
+                        <h2>
+                            PAID — PROCESSING
+                        </h2>
+
+                        <p>
+                            The order has been successfully
+                            paid through Stripe.
+                        </p>
+
+                    </div>
+
+                `
+
+            });
+
+        }
+
+
+        /*
+         * FUTURE:
+         *
+         * Purchase each gift card from your supplier
+         * and email the codes to customerEmail.
+         */
+
+
+        return;
+
+    }
+
+
+    /* =====================================================
+       SINGLE ORDER
+    ===================================================== */
 
     const product =
         metadata.productName ||
@@ -951,29 +1839,59 @@ async function processCompletedOrder(
         ).toFixed(2);
 
 
-    const customerEmail =
-        metadata.customerEmail ||
-        session.customer_details?.email ||
-        "Unknown";
-
-
-    const displayCurrency =
-        metadata.displayCurrency ||
-        "USD";
-
-
     console.log("");
-    console.log("================================");
-    console.log("        NEW GIFty ORDER");
-    console.log("================================");
-    console.log("Stripe Session:", session.id);
-    console.log("Product:", product);
-    console.log("Gift Card:", giftCardValue);
-    console.log("Fee:", fee);
-    console.log("Total USD:", totalUSD);
-    console.log("Currency:", displayCurrency);
-    console.log("Customer:", customerEmail);
-    console.log("================================");
+
+    console.log(
+        "================================"
+    );
+
+    console.log(
+        "        NEW GIFty ORDER"
+    );
+
+    console.log(
+        "================================"
+    );
+
+    console.log(
+        "Stripe Session:",
+        session.id
+    );
+
+    console.log(
+        "Product:",
+        product
+    );
+
+    console.log(
+        "Gift Card:",
+        giftCardValue
+    );
+
+    console.log(
+        "Fee:",
+        fee
+    );
+
+    console.log(
+        "Total USD:",
+        totalUSD
+    );
+
+    console.log(
+        "Currency:",
+        displayCurrency
+    );
+
+    console.log(
+        "Customer:",
+        customerEmail
+    );
+
+    console.log(
+        "================================"
+    );
+
     console.log("");
 
 
@@ -1016,38 +1934,73 @@ async function processCompletedOrder(
                     <hr>
 
                     <p>
-                        <strong>Product:</strong>
-                        ${escapeHtml(product)}
+                        <strong>
+                            Product:
+                        </strong>
+
+                        ${escapeHtml(
+                            product
+                        )}
                     </p>
 
                     <p>
-                        <strong>Gift Card:</strong>
-                        $${escapeHtml(giftCardValue)}
+                        <strong>
+                            Gift Card:
+                        </strong>
+
+                        $${escapeHtml(
+                            giftCardValue
+                        )}
                     </p>
 
                     <p>
-                        <strong>GIFty Fee:</strong>
-                        $${escapeHtml(fee)}
+                        <strong>
+                            GIFty Fee:
+                        </strong>
+
+                        $${escapeHtml(
+                            fee
+                        )}
                     </p>
 
                     <p>
-                        <strong>Total Paid:</strong>
-                        $${escapeHtml(totalUSD)}
+                        <strong>
+                            Total Paid:
+                        </strong>
+
+                        $${escapeHtml(
+                            totalUSD
+                        )}
                     </p>
 
                     <p>
-                        <strong>Customer Email:</strong>
-                        ${escapeHtml(customerEmail)}
+                        <strong>
+                            Customer Email:
+                        </strong>
+
+                        ${escapeHtml(
+                            customerEmail
+                        )}
                     </p>
 
                     <p>
-                        <strong>Display Currency:</strong>
-                        ${escapeHtml(displayCurrency)}
+                        <strong>
+                            Display Currency:
+                        </strong>
+
+                        ${escapeHtml(
+                            displayCurrency
+                        )}
                     </p>
 
                     <p>
-                        <strong>Stripe Session:</strong>
-                        ${escapeHtml(session.id)}
+                        <strong>
+                            Stripe Session:
+                        </strong>
+
+                        ${escapeHtml(
+                            session.id
+                        )}
                     </p>
 
                     <hr>
@@ -1071,20 +2024,10 @@ async function processCompletedOrder(
 
 
     /*
-     * IMPORTANT:
+     * FUTURE:
      *
      * This is where automatic gift-card fulfillment
-     * should eventually happen.
-     *
-     * Example:
-     *
-     * const giftCard =
-     *     await giftCardSupplier.purchase(...)
-     *
-     * Then email the code to the customer.
-     *
-     * DO NOT put gift-card supplier API keys
-     * inside the frontend.
+     * should happen.
      */
 
 
@@ -1098,11 +2041,31 @@ async function processCompletedOrder(
 function escapeHtml(value) {
 
     return String(value)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
+
+        .replaceAll(
+            "&",
+            "&amp;"
+        )
+
+        .replaceAll(
+            "<",
+            "&lt;"
+        )
+
+        .replaceAll(
+            ">",
+            "&gt;"
+        )
+
+        .replaceAll(
+            '"',
+            "&quot;"
+        )
+
+        .replaceAll(
+            "'",
+            "&#039;"
+        );
 
 }
 
@@ -1158,12 +2121,18 @@ app.listen(
     () => {
 
         console.log("");
+
         console.log(
             `🎁 GIFty API running on port ${PORT}`
         );
+
         console.log(
-            `Frontend: ${FRONTEND_URL || "not configured"}`
+            `Frontend: ${
+                FRONTEND_URL ||
+                "not configured"
+            }`
         );
+
         console.log("");
 
     }
